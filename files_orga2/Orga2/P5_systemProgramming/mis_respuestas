@@ -1,0 +1,103 @@
+Resumen System Programming
+
+Modo Real: Modo en el que arrancan todos los x86
+           16 bits
+           No tiene niveles de privilegio
+           Direccionable a 1 MB: 
+                Las direcciones fisicas se calculan: physical address = segment selector * 16 + offset
+                Donde el valor del segmento esta en un registro, en modo real no tienen atributos. Se lo shiftea 4 y se le suma el offset de otro registro.
+                
+           Tiene menos modos de direccionamiento.
+           
+Modo Protegido: Estado nativo del procesador
+                Direccionamiento hasta 4GB
+                Tiene nivlees de privilegio
+                
+Bootloader:
+    1) CPU ejecuta codigo residente en la memoria flash de la BIOS
+    2) BIOS ejecuta POST (Power On Self Test), donde se hace los tests necesarios para ver si puede operar.
+    3) AHora BIOS busca un dispositivo Booteable ( diskette, pendrive, disco rigido)
+    4) Se copia a memoria principal en la posicion 0x7C00 el sector de booteo (bootloader)
+    5) Se copia el bootloader en la pos 0x10000 (se la copia dos veces)
+    6) Busca el archivi kernel.bin y lo copia en 0x1200
+    7) Se salta a 0x1200 y se ejecuta a partir de ahi. En ese archivo esta el pasaje a modo protegido
+    
+Pasaje a modo protegido: 
+    1) Arma la GDT
+    2) Deshabilita interrupciones
+    3) Carga el GDTR
+    4) Setea PE en CR0
+    5) Hace un FAR JUMP al codigo de nivel cero del modo protegido <---------------- JMP <selector:offset>
+    6) Carga los registros de segmento
+    
+    
+    NOTAR: 
+        El GDTR e IDTR almacenan la direccion de memoria de la GDT/IDT.  ESta direccion es la LINEAR ADDRESS, para ahorrarse traducciones.
+    
+    
+------ CHECKPOINTS -------
+
+PRIMER CHECKPOINT:
+
+2. Necesitamos pasar a MP porque las aplicaciones de hoy en dia requieren mucho mas que 1MB. Ademas necesitamos los niveles de privilegio por seguridad.
+
+3. La GDT es la Global Descriptor Table, ahi se guardan todos los descriptores, con los que se acceden a diferentes segmentos en memoria. La GDTR apunta a la direccion base de la GDT, 
+los selectores de segmento tienen el desplazamiento para llegar a su descriptor de segmento, de ahi se saca direccion base y limite del segmento para acceder a memoria.
+
+4 y 5 son deducibles del entregable. Que signifiacn los bits de los descriptores ya esta explicado en el docs, en el pizarron y en los slides.
+
+6) struct gdt_entry_t define al struct de los desriptores. Tiene distintos tipos de datos (uint16 y uint8) pero toma valores de tamaño acotado ( : 1 ). Esta empaquetado y tiene el tamaño 
+justo de un descriptor (64 bits).
+
+str_gdt_descriptor es el struct de la GDTR, contiene datos para poder asignar direccion base y tamaño de la gdt.
+
+gdt_entry_t gdt[] es un arreglo de descirptores de segmento. Esta seria la gdt.
+
+7) Esta en el archivo, el limite de los descriptores los saque con : limite = |size| - 1 = |817MIB| - 4k (el -1 es relativo a la granularidad, ya que dependiendo de si esta en 0 o 1 representa 
+otro tamaño cada offset, en este caso tenemos la granularidad en 1 porque queremos mas de 1MB) = 817 * 2²⁰ B - 2¹² B = (2⁸ * 817 - 1 ) * 2¹² B = 209151 * 4KB = 0x330FF * 4KB
+
+
+8) LGDT toma como parametro una posicion de memoria, a partir de ahi se cargan a la GDTR 48 bits.
+
+Loads the values in the source operand into the global descriptor table register (GDTR) or the interrupt descriptor
+table register (IDTR). The source operand specifies a 6-byte memory location that contains the base address (a
+linear address) and the limit (size of table in bytes) of the global descriptor table (GDT) or the interrupt descriptor
+table (IDT). If operand-size attribute is 32 bits, a 16-bit limit (lower 2 bytes of the 6-byte data operand) and a 32-
+bit base address (upper 4 bytes of the data operand) are loaded into the register.
+
+9) LGDT [GDT_DESC] ; notar que necesitamos los corchetes poruqe el nombre del struct se termina traduciendo a una direccion de memoria.
+
+
+SEGUNDO CHECKPOINT:
+
+10) Los selectores de segmento son de 16 bits, de los cuales 13 son el indice de la gdt, 2 son de RPL y 1 inidca si es un descirptor que se encuentra en la GDT o LDT.
+    En defines.h definir los selectores = agarrar el indice que te dan, shiftearlo 3, hacer un or para asignar RPL, hay un bit que se queda en 0, el TI
+    
+11) Para cargarle a todos los registros de segmento el selector del segmento de codigo de nivel cero, hay que primero cargarlo a un registro no de segmento, para luego hacer los movs. 
+    No poder cargar directo los registros de segmento tiene que ver mas con hardware que otra cosa.
+
+12) Vamos a deshabilitar las interrupciones, con CLI, para poder hacer el pasaje a modo protegido. ( ya tenemos el codigo para armar la GDT hecha). El registro EFLAGS tiene un flag especial IF, que si esta en 0 deshabilita las interrupciones. Esto CLI lo hace solo.
+
+13) CR0: Contains system control flags that control operating mode and states of the processor.
+    El flag que nos importa ahora es CR0.PE, que es Protection Enable, que activa el MP. Este flag no activa directamente paginacion, pero activa proteccion en segmentacion. Si quiero paginacion hay que activar CR0.PG y CR0.PE. (es el bit 0)
+    Vamos a tener que manipular CR0 de la misma forma que los registros de segmento (no puedo cambiarlo directamente). Temgo que hacer movs entre registros.
+    
+    Control registers (CR0, CR1, CR2, CR3, and CR4; see Figure 2-7) determine operating mode of the processor and
+    the characteristics of the currently executing task. These registers are 32 bits in all 32-bit modes and compatibility
+    mode. 
+    
+    The control registers can be read and loaded (or modified) using the move-to-or-from-control-registers forms
+    of the MOV instruction. In protected mode, the MOV instructions allow the control registers to be read or loaded
+    (at privilege level 0 only). This restriction means that application programs or operating-system procedures
+    (running at privilege levels 1, 2, or 3) are prevented from reading or loading the control registers.
+    
+15) Seteo ebp y esp, en 0x2500. Notar que ebp y esp se inicializan en el mismo lugar.
+
+CHECKPOINT 3
+
+17) Tiene que tener un tamaño de 8000 bytes, por eso el limite es 7999. Ya esta definido en el archivo.
+18) Dibuja una caja de caracter y attributos vga como parametro. Ademas tiene los limites de la caja como parametros, y usa el struct nuevo ca = .character y .attr.
+19) Pinta todo de negro y despues pone martin.
+
+
+

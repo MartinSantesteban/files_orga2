@@ -1,0 +1,139 @@
+CLASE PRACTICA 10: TAREAS
+
+TAREAS:
+    Una tarea es una unidad de trabajo que el procesador puede despachar, ejecutar y suspender. Puede ser usada para ejecutar un programa.
+    Dos tareas distintas pueden tener el mismo codigo de tarea, pero un distinto contexto -> Pueden verse como dos instancias del mismo programa.
+
+ESPACIO DE EJECUCION Y SEGMENTO DE ESTADO:  
+    En memoria, una tarea va a tener su propio espacio de ejecucion y segmento de estado, 
+        El espacio de ejecucion corresponde a sus propias paginas mapeadas, donde va a tener el codigo, datos y pilas. Notar que cada tarea tiene su propio directorio.
+        
+        El segmento de estado(TSS) es una region de memoria que almacena el estado de una tarea, a la espera de iniciarse o ser dealojada del procesador.
+        Tiene un formato especifico para poder reanudarla/iniciarla.
+        En la TSS se guarda: Registros de proposito general, de segmento de la tarea y de la pila de nivel 0, Flags, CR3 y EIP. Guarda el SS de todos los privilegios.
+
+SCHEDULER:
+    Modulo de software que se encarga de administrar la ejecucion de tareas/procesos. Utiliza alguna politica de desalojo o criterio para decidir cual es la proxima tarea a ejecutar.
+    Cada vez que se cambia de tarea, se produce un cambio de contexto.
+    
+CONTEXT SWITCH:
+    El procesador puede correr una sola tarea por vez, y cada tarea tiene su propio contexto de ejecucion.
+    Cuando se pasa de una tarea a la otra, se cambia el contexto. 
+    Se pone en memoria el TSS de la tarea A, se busca el TSS de la tarea B y se le asigna a todos los registros los valores de la TSS de B, para poder cambiar de contexto.
+
+TASK REGISTER:
+    Hay un registro nuevo, el task register, que se usa para buscar en GDT el descriptor de TSS, para poder buscar en memoria al TSS.
+    El Task Register es de 16 bits, actua como selector de segmento a una TSS descriptor.
+    Del descriptor se accede directamente a la posicion de memoria de la TSS
+    
+TSS DESCRIPTOR:
+    Es de 64 bits, en n se almacenan dos datos: Segment limit y base address. El segment limit es siempre el mismo, ya que todas las TSS son iguales. Es 0x67 = 103 B. <- lo que mas me importa es el Base address.
+    en n + 4, tengo el resto del base address (en total son 32 bits de base add), el resto del limite(el limite es de 20 bits ; notar que tengo aca el limite solo por compatibilidad con los demas descriptores.)
+    Tengo despues atributos:
+        Bit P: Present
+        DPL: Descriptor priviledge level
+        AVL: Available for system software use
+        Type: Segment type <- el de las tareas siempre es 0 1 0 B 1. 
+        El bit B del tipo es super importante! 
+            B es de Busy, lo iniciamos en 0. Si es la tarea que estamos ejecutando ahora mismo, ese bit se pone en 1 (sino esta en 0).
+            Notar que no podemos hacer jumps a segmentos de tareas con el bit B en 1!
+            Esto nos importa mas cuando el scheduler quiere cambiar de tarea, y hacer el JMP FAR. Si yo quiero saltar de una tarea A a si misma, se va a querer saltar a una tarea con el bit B = 1 y salta un GP.
+            El bit busy se chequea al principio de la ejecucion del jump, y se pone en 0 despues de ejecutarlo.
+
+TAREAS NECESARIAS DE DEFINIR:
+    El procesador SIEMPRE tiene que estar ejecutando una tares, aunque no haga nada.
+     -> Apenas arranca la computadora, se pone en ejecucion la tarea inicial. Esta existe para poder hacer el primer context switch.
+     -> Si no hay tareaa para ejecutar, se ejecuta la tarea IDLE. 
+    El resto de las tareas que se necesiten, ya sean de usuario y/o kernel, las debemos definir nosotros.
+    
+AL INICIO DEL KERNEL:
+    1. Apenas se inicia el kernel, hayq que cargar la tarea inicial. Para eso uso LTR (load task register) y le pongo el selector de la tarea inicial. LDTR ax (con ax:= selectrod el segmento de tarea inicial)
+    2. AHora hayq ue saltar a la tarea idle, con JMP SELECTOR_TAREA_IDLE:0 (el offset es ignorado) <- esto va a cambiar el valor del TR apuntando a la TSS de la tarea Idle y produce el cambio de contexto. 
+     Los saltos a tareas es algo que lo hace el SO en nivel 0.
+    
+    Notar que: Con los context switches, se cambia el valor de cr3 porque cada tarea tiene su entorno de ejecucion, y se cambia el EIP, va a seguir ejecutando desde el ultimo punto de la tarea actual.
+               La rutina de atencion al recloj que actua como scheduler, la voy a ver bien en los checkpoints yq eu piden explicarla
+               
+EL STACK Y TAREAS:
+    Si estoy ejecutando una tarea de DPL 0 (especificado por el descriptor de TSS), y me llega la interrupcion del scheduler para cambiar de tarea, automaticamente(como vi en interrupciones) se pushea a la pila de nivel 0 los flags, cs, eip y error code. Notar que hay solo una pila en uso. <- tarea y rutina de atencion usan la misma pila
+
+    Si estoy ejecutando una tarea de nivel 3, cuando llega la interrupcion del scheduler, dejo de lado mi pila(de nivel 3) y se pushea a el stack de nivel 0 lo mismo que antes, pero como cambiamos de privilegio (y por lo tanto, de stacks), ahora ademas pusheo SS y ESP. Estos valores de la tarea de nivel 3 se restauran luego con el iret. <- tenemos la pila de la tarea y la pila de la rutina de atencion
+
+------------------------------- CHECKPOINTS -------------------------------
+
+CHECKPOINT 1 
+
+    1. Si tengo solo dos tareas, requiero: 
+        Dos tablas de directorio nuevas (estaran almacenadas en area de kernel>
+        Dos page tables nuevas (tambien en kernel)
+        A cada tarea, por convencion, le asgino tres paginas (una de codigo, una de datos y una de stack). Estas estan en el area de su dpl
+        Ademas, cada tarea tiene su propio TSS, que se guarda en kernel.
+
+    2.  Un cambio de contexto se lleva a cabo al cambiar de tarea. Se necesita guardar el contexto en memoria de  
+        la tarea actual y poner el contexto de la tarea a la que estamos cambiando en el procesador.
+        El registro TR almacena el selector de la tarea actual, apunta a la gdt, dodne esta el tss descriptor de la tarea actual. El scheduler cambia de tarea al cambiar el valor de TR.
+
+    3. Para poder realizar el primer cambio de contexto usamos la tarea inicial. Cunado no tenemos tareas disponibles saltamos a la tarea idle, ya que el procesador siempre tiene que estar ejecutando una tarea.
+    
+    4. El scheduler se encarga de decicidr quien es la tarea actual. Esto lo hace cambiando el valro del TR.
+    
+    5. Se ejecutan de a pedazitos los programas para crear una sensacion de simultaneidad
+    
+CHECKPOINT 2
+
+    6. tss_t tss_initial = {0};
+       Esta es la definicion de la tss de la tarea inicial. Esta inicializada en 0. Esto implica que el valor de absolutamente todos los registros empiezan inicializados en 0.
+       
+    7. gdt_entry_t tss_gdt_entry_for_task(tss_t* tss) 
+       Le das como parametro un puntero a tss, y a partir de eso devuelve una entrada en la gdt. Esta entrada esta codificada como un TSS descriptor. Notar que hay campos de un descriptor que no llena, porque la tss descriptor no los tiene (como l, db), estos se inician en 0.
+      
+       void tss_init(void) {
+	  //COMPLETAR
+	  gdt[GDT_IDX_TASK_IDLE] = tss_gdt_entry_for_task(&tss_idle);
+	  gdt[GDT_IDX_TASK_INITIAL] = tss_gdt_entry_for_task(&tss_initial);
+}
+
+
+
+     8.  
+     mov ax, TASK_INITIAL_SEL 
+     ltr ax      ;; la task inicial esta en gdt[11], el selector entonces es 11 << 3, por los atributos
+     xchg bx, bx
+     
+     jmp TASK_IDLE_SEL:0      ;; jmp <selector:offset> como es una tss descirptor no me importa el offset. 
+     
+     9. El cr3 de la idle es el directorio de paginas del kernel en 0x25000
+     
+     10. Si llega a haber un interrupcion o un cambio de privilegio necesito tener definida la pila de nivel 0 para utilizarla. Sino, hay un gpf
+     
+     13.
+     
+     
+     sched_task_offset: dd 0xFFFFFFFF
+     sched_task_selector: dw 0xFFFF
+     
+     
+global _isr32
+_isr32:
+        pushad                              // Pusheo todos los registros de proposito general a el stack de nivel 0
+        call pic_finish1                    // Le aviso al pic que estoy atendiendo la interrupcion 
+        call sched_next_task                // La funcion implemnetada en sched_next_task me devuelve en eax a selector de segmento de la siguiente tarea
+        str cx                              // almaceno el valor de tr en cx (en cx pongo el selector de la tarea actual)
+        cmp ax, cx                          // Comparo el selector actual con el siguiente selector. Si es el mismo, salto a .fin. Si no estuviera el cmp, y son el mismo, hay una #GPF pq voy a querer saltar al descriptor de una tarea busy
+        je .fin                             // Si son iguales, salto a .fin 
+        mov word [sched_task_selector], ax  // Pongo el selector al lado del offset en memoria
+        jmp far [sched_task_offset]         // jmp far agarra los 48 bits del operando, como es un jmp far, agarra a un selector + offset, y el selector es de un TSS descriptor, asi que no me importa el offset, pq no lo voy a usar.
+    .fin:                                   // etiqueta
+        popad                               // popeo todo del stack de nivel 0
+        iret                                // vuelvo, y popeo del stack de nivel 0 lo que pushee antes de la interrupcion(del stack de lvl 0).
+    
+    
+    14.
+
+    
+    
+    EL JMP FAR SE ENCARGA DE HACER SOLO EL TASK SWITCH, SOLO HAY QUE CAMBIAR EL SELECTOR Y EL PROCESADOR SE ENCARGA DEL RESTO!
+    
+    
+    
+     

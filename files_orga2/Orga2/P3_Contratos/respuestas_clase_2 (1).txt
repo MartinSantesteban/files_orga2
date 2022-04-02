@@ -1,0 +1,74 @@
+1
+  a) struct(a, b, c)
+     n_|c|b|a|_0
+     Se alinea respecto a su longitud en bytes, (debe encontrarse en un multiplo)
+     (Se alinea el principio de la estructura a b bytes?) Sí
+
+     Y cada atributo está alineado según su tamaño
+     f(p, s, r) = |r|r|r|r||s|s|0|p|
+
+     En el caso struct(a, b, c), a:1, b:1, c:2 = |c|c||b|a|
+
+     sea n = max(size(a)) para todo a, atributo de struct
+     El desplazamiento por atributo puede calcularse como:
+     f(0) = 0
+     f(i) = if f(i-1) % |struct[i]| == 0 then 
+                                         f(i-1) + |struct[i]|
+                                         else 
+                                         f(i-1) + f(i-1) % |struct[i]|
+                                         fi
+    
+     El desplazamiento total será: f(n)
+
+  b) en caso de que este empaquetado su tamaño es la suma de los tamaños de
+     sus miembros.
+
+     En el caso alineado el tamaño es el desplazamiento del último atributo alineado
+     al tamaño del miembro más grande.
+
+  c) Una convención de llamada permite asegurar ciertas propiedades sobre ciertos registros
+     En que espacio se ubicarán los ditintos parámetros cuando se realizan llamados a funciones.
+     
+     En 64 en primer lugar se utilizan una lista de registros, en orden,
+     discriminado por tipo de dato, y si hiciese falta, el resto se empuja al stack
+     Luego todo push sub debe tener su pop add y la pila debe estar alineada a 16b
+
+     En 32 no hay registros, todo parametro se empuja a la pila.
+
+  d) En C, el compilador se encarga de asegurar que se cumplen las convenciones
+     En asm es el propio usuario el que debe asegurarse de estar cumpliendolas
+     o si las incumple de evitar problemas.
+
+  e) El stack frame es:
+     la región de la pila comprendida entre los parámetros y el tope de pila 
+
+     En el prólogo se reserva espacio para datos temporales
+     y se preservan los registros no volatiles.
+
+     En el epílogo restauramos los valores no volatiles a sus registros 
+     y devolvemos la pila a su estado inicial.
+
+  f) Se empujan a la pila y cuando se sale del stackframe en el que están alojadas
+     mueren
+
+  g) Alineada a 16bytes, luego de hacer call, el push del RIP nos deja alineados a 8
+  
+  h) El programa compilaría pero obtendríamos resultados irrelevantes. 
+     (o hace algo el linker?) __P__
+
+2
+  • Explicar:
+      alternate_sum_4
+                     lo que hace es dados sus 4 parametros:
+                     rax := x1 - x2 + x3 - x4
+                     (para que se limpia rdi?) __P__
+                sum_z
+		     dado un arreglo y su longitud nos deja la 
+                     suma de todos los miembros
+		     rax := sum_{i = 0}^|A| a[i][item]
+         packed_sum_z
+                     es igual al anterior pero sus constantes cambian pues no hay
+                     necesiadad de alienar los miembros del struct
+            product_2
+                     producto 
+          product_2_f

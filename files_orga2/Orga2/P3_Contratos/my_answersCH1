@@ -1,0 +1,130 @@
+[CLASE PRACTICA 3: CONTRATOS Y CONVENCION C]
+
+
+NOTAS:  
+
+CONTRATOS: Un contrato es un acuerdo de uso entre dos partes, la parte garante que cumple con una garantia y la parte beneficiaria que opera suponiendo que se llevo a cabo la garantia.
+           Ejemplo de contratos:    
+                - Alineacion de datos: Sin contratos, la memoria es una secuencia de bits. Si tenemos en cuenta los contratos que define la alineacion, podemos leerla correctamente al suponerla. Es un contrato para las estrcuturas en C
+                                       Para asegurar que se cumple el contrato, el compilador genera padding.
+                - Contrato de funciones: La firma de una funcion declara que tipos toma como parametro, nombre y que tipo devuelve. Ya que C genera codigo objeto, con este contrato puedo , respetando la convencion C, llamar funciones
+                                         de bibliotecas binarias desde otros lenguajes. C puede llamar funciones en ASM, ASM puede llamar funciones en C.
+                                         
+                Para realizar llamadas entre funciones de usuario, surge la Convencion C.
+                Para poder pasar la informacion entree funciones y a nivel binario, la CC define que se pasan los parametros por pila(32 bits) o pila y registros(64 bits), ademas de definir a los registros no volatiles(prologo + epilogo).
+                -> Pq no usamos solo la pila? Pq perdes velocidad al no usar registros, ya que se hacen muchos mas accesos a memoria innecesarios.
+                -> Pq no se usan solo registros? Pq tenes que preservar el valor de algunos registros. ( de aca surgen los registros volatiles y no volatiles, ver cheatsheet)
+                
+                El compilador se encarga de pasar los parametros cuando llamas desde C a una funcion definida en ASM, el compilador te pasa los parametros como van por convencion
+                Si desde ASM llamas a una funcion en C, el programador se encarga de pushear a la pila los parametros y el compilador los agarra de derecha a izquierda.
+                
+        
+-----------------------------------------------------------------------------------------------------------------------------------------------------
+A) ¿Como se alinea un atributo de un struct no empaquetado en memoria? ¿Como calcularia el desplazamiento a partir del comienzo de la estructura?
+
+Un atributo de un struct en memoria se alinea con respecto a su tamaño: Si el tamaño de el atributo A es n, entonces A comienza en una posicion de memoria multiplo de n. Esto es alinearse con respecto a el tamaño.
+Entonces, tambien se cumple con un struct: Se encuentra alineado con respecto a su tamaño, y todos sus atributos adentro tambien, si no esta empaquetado hay padding en el medio que ayuda a conseguir alineamiento.
+Si el struct no esta empaquetado, se puede calcular el despalazamiento a partir de el tamaño de el atributo mas grande, ya que un struct no empaquetado esta alineado al tamaño del atributo mas grande. Entonces &(struct.i) = &struct + i * max_size
+Se alinea porque libc pide por contrato que se tenga la memoria alineada.(contrato de gcc)
+
+B) ¿Como se calcula el tamaño de un struct empaquetado? ¿Y el tamaño de uno no empaquetado?
+El tamaño de un struct empaquetado es n * max{sizeof(atributo 1), sizeof(atributo2)...}. Si NO esta empaquetado, entonces el tamaño es la suma de todos los tamaños de los atributos.
+
+C) ¿Que entienden por convencion a llamada? ¿Como esta definida la convenvion C para 64 y 32 bits?
+
+Por convencion a llamada se entiende a la forma de realizar y pasar informacion entre funciones de usuario. Como convencion, se pasan los parametros de la funcion en C mediante la pila en 32 bits, en 64 bits se usan los registros de proposito general y la pila.
+La diferencia entre la convencion en 64 bits y 32 es que en 64 se usan los registros de 64 bits para pasar los parametros. Ademas, cuando se termina de ejecutar una funcion, se debe dejar la pila como estaba antes de llamarla(cada push tiene su pop), el valor de retorno se devuelve en rax/eax y la pila se devuelve alineada a 16 bits.
+
+LA CONVENCION C SE USA CUANDO QUIERO LLAMAR A UNA FUNCION DE C DESDE ASM O A UNA FUNCION DE ASM DESDE C <- hay que definir el alcance del contrato de funciones en termminos de la arquitectura en particular <- se usa el pasaje de parametros
+
+Cualquier lenguaje que genere codigo objeto puede interactuar con funciones ubicadas en bibliotecas binarias.
+
+D) ¿Quien toma la responsabilidad de asegurar que se cumpla la convencion de llamada en C? ¿Quien toma la responabilidad de asegurar que se cumple la convencion de llamada en ASM?
+
+En C, el compilador se encarga de que se cumplan las convenciones a llamadas de funciones, como cheuqear signatura de funciones (que si se usa una funcion con el mismo nombre se devuelva el mismo tipo y tome los parametros del tipo indicado). En ASM el programador se encarga de que se cumplan todas las convenciones.
+
+E) ¿Que es un stack frame? ¿A que se le llama prologo y epilogo?
+
+El prologo es cuando al llamar una funcion de C a ASM se ejecuta PUSH(RBP) ;  MOV RBP RSP. La idea de esto es guardar el rbp anterior y definir como rbp2 nuevo al rsp actual, asi ahora podemos pushear lo que necesitamos por convencion C, y luego al hacer los pops 
+se recupera el rbp anterior, accediendo al stack frame anterior de la funcion llamadora(notar que antes de manipular la pila en el prologo, se pusheo el RIP de la funcion llamadora junto con sus parametros si hace falta). Como parte del prologo sigue agregar       el padding necesario para alinear el stack a 16 bits, para luego pushear los registros no volatiles.Tambien se reserva espacio para las variables temporales que sabe que va a usar.
+Luego se hace el call a la funcion desde ASM.(Al hacer el CALL se guarda el EIP de la llamadora) <- tambien preserva rbp, toma todos los parametros que le pasamos en el epilogo (mov r, [rbp + 0x10]) y luegio 
+
+A la region comprendida entre los parametros recibidos y el tope de la pila actual se llama stacj frame. Durante la ejecucion del programa suelen haber varios stack frames apiladors, uno por cada funcion de la cual no se regreso aun.
+
+
+En el epilogo, se hacen los POPs necesarios para dejar la pila como estaba antes de llamar a la funcion. Se deja la pila de la funcion llamadora. <- se restauran los registros no volatiles y devolvemos la pila a su estado inicial.
+
+F) ¿Cual es el mecanismo usado para almacenar variables temporales?
+
+Se les reserva espacio, y se usa la pila para almacenarlas. Luego se popean.
+
+G) Hay que alinear la pila a 16 bytes para utilizar funciones de libc. Si esta alineada antes de llamar la funcion, lugo al llamar se pushea el RIP, que es de 64b = 8B, esto nos dejo alineados a 8B. Luego ademas lo primero que se pushea es el RBP, que tmb nos deja alineados a 8B. 
+
+
+---- [ CHECKPOINT 2 ] ---------------------------------------------------------------
+
+Explicar las funciones:
+
+En este ej todas las funciones estan implementadas en ASM, se las llama desde C.
+(estan definidas en checkpoint2.asm y son llamadas en checkpoint2.c)
+
+Las funciones se definen a partir de la seccion de texto, en .text .
+Las que se exportan de c a asm y viceversa se ponen como global.
+
+En este ejercicio, las funciones las definis en asm y las llamas en C. El pasaje de los parametros cuando lo llamas en C a ASM es resuelta por el compilador, si fuese implementada en C y la llamas desde ASM, entonces ahi si haces los push y movs desde C.
+
+--------------------------------- CONVENCION C CON EL PASAJE DE PARAMETROS -----------
+
+LLAMAS A UNA FUNCION IMPLEMENTADA EN ASM POR C:  funcion( uint32_t x1, uint32_t x2, ...) 
+
+Aca , la convencion la lleva a cabo el COMPILADOR. Va de derecha a izquierda metiendo los valores en registros o en la pila, siguiendo la convencion en el cheatsheet. Dice: Si es entero, lo meto en edi,esi, etc. Por eso vos en ningun momento ves los MOVs a los registros en asm, y en la implementacion ya das por sentado que esta todo en su lugar, por convencion.
+
+LLAMAS A UNA FUNCION IMPLEMENTADA EN C POR ASM: CALL funcion
+
+Aca, se encarga de todo el programador: En .main haces los push/movs necesarios de DERECHA a IZQUIERDA con los parametros con los que queres llamar a la funcion de C, luego haces un CALL a la funcion y se emeparejan las etiquetas. 
+---------------------------------------------------------------------------------------
+
+
+* alternate_sum_4:
+
+uint32_t alternate_sum_4(uint32_t x1, uint32_t x2, uint32_t x3, uint32_t x4);
+registros: x1[rdi], x2[rsi], x3[rdx], x4[rcx]
+
+Se hace el call, se pushea rip, despues se pushea rbp y se le asigna al rbp nuevo el rsp actual. Luego se pushean los registros r12 a r15, que estan disponibles en 64 bits y son no volatiles. Se genera padding para alinear el stack (sub rsp, 0x8).  Esto fue el prologo.
+Luego:
+xor eax, eax     (se limpia donde ira el resultado)
+eax <- eax + edi
+eax <- eax - esi
+eax <- eax + edx
+eax <- eax - ecx
+
+Hago las sumas y restas que quiero a la parte baja de rax con los operandos de la funcion.
+Luego viene el epilogo, donde se deshace el padding realizado antes ( add rsp, 0x8 ) y se hacen los pops de los registros no volatiles. (los r12 a r15 y rbx, tambien rbp para volver al stackframe anterior).
+Luego se hace el ret que popea el eip que se fue producto del call en el stack.
+
+*alternate_sum_4_simplified:
+
+Esta version no tiene ni epilogo ni prologo, pq no se usa ningun registro no volatil. Los operandos usan registros volatiles y el res tmb lo es.
+Hace lo mismo.
+
+* alternate_sum_8
+
+; uint32_t alternate_sum_8(uint32_t x1, uint32_t x2, uint32_t x3, uint32_t x4, uint32_t x5, uint32_t x6, uint32_t x7, uint32_t x8);	
+; registros y pila: x1[rdi], x2[rsi], x3[rdx], x4[rcx], x5[r8], x6[r9], x7[rbp + 0x10], x8[rbp + 0x18]
+
+toma 8 enteros, los guarda en todos los registros volatiles y en el stack. 
+
+Pushea todos los no volatiles, agrega padding y alinea a 16.
+
+despues hace leas (Load Efective Adress) con rbx y mete los parametros que por convencion fueron a parar en la pila en registros para poder operar con ellos.
+
+
+----[  CHECKPOINT 3 ]----
+
+Ya complete todo.
+
+
+
+
+
+
