@@ -1,0 +1,20 @@
+PARCIAL ORGANIZACION DEL COMPUTADOR 2
+
+
+1. Encontrar error en cada función, en 64 bits.
+
+[ alternate_sum_5 ] 
+    La función hace una suma alternada entre los 5 parametros.
+    alternate sum 5(x1, x2, x3, x4, x5) = x1 − x2 + x3 − x4 + x5
+    
+    El error esta en que modifia r12, cuando r12 es no volatil, y despues no lo restaura!
+    
+[alternate_sum_9]
+    Hace una suma alternada entre 9 operandos.
+    El error esta en que restaura masl los registros no volatiles: Hay que repetar el orden de los pops y los pushes. Para cuando se sale de la función, r15 == r14_0 y r14 == r15_0
+    Se ve bien que NO se repeta el orden entre pushes y pops.
+    
+2. Convencion C de 32 bits
+
+
+3. ¿ Cual es la unidad de direccionamiento en 32 bits? ¿Y en 64 bits?

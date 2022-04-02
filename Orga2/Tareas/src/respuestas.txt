@@ -1,0 +1,187 @@
+(Donde se guardan las TSS?)
+
+1: a)	Una tarea tiene,
+	Espacio de ejecución:
+	Páginas para almacenar el código, datos y stack.
+	
+	TSS:
+	Almacena el estado del procesador dentro de la tarea.
+	Flags, registros, CR3, EIP.
+	
+	TR:
+	Almacena el índice de la GDT que referencia al descriptor de segmento
+	que apunta al TSS de la tarea actual.
+	
+   b)	Cantidad y registros:
+   	Tendremos tareas, Inicio, Idle, A, B.
+   	necesitamos un directorio para cada tarea, una entrada en el directorio
+   	para cada tarea, que implica una tabla de página para cada tarea, y cada
+   	tabla de páginas debe tener 4 entradas, dos para las páginas de código
+   	datos y stack.
+   	Luego agregar una entrada a la GDT y configurar la TSS.
+   	
+   	Esto son 21 entradas en total.
+   	
+   	Finalmente hay que configurar TR.
+   	
+   	CR3 -> PDT -> PT -> PTE
+   	
+   c)	Configuración y bits:	
+   	CR3 debe apuntar a la PDT de la tarea de inicio.
+   	Para PDT y PT es relevante el bit de presente en 1.
+   	
+   	Debemos configurar las TSS's de cada proceso, y agregar sus entradas a la GDT.
+   	De interés es configurar EIP, ESP, EBP, ESP0
+   	CS, DS, ES, FS, GS, SS, S0
+   	CR3 (para la correcta paginación) y EFLAGS en 0x00000202 (bit de interrupt).
+   	
+   d)	La TSS se encuentra en memoria del kernel.
+   	lo demás en sus respectivas tablas y registros como se ha visto antes.
+   	
+2)	LLamamos cambio de contexto al proceso de preservar el estado
+	actual en el TSS de la tarea actual y cargar el estado
+	 descripto por la TSS de la tarea a ejecutar en los registros del procesador.
+	
+	Se produce cuando ocurre un salto entre tareas, esto es en la continuidad
+	del procesador ocurre que la tarea a ejecutar es distinta a la que esta siendo ejecutada.
+	
+	El efecto producido es el de reemplazo de los registros del procesador por
+	los valores descriptos en la TSS de la nueva tarea.
+	
+	El registro TR almacena el índice de la GDT que referencia al descriptor de segmento
+	que apunta al TSS de la tarea actual.
+	
+	Utilizando el registro TR, se busca en la GDT el descriptor que apunta a la TSS
+	de la nueva tarea, y desde allí se cargan los registros, incluyendo el CR3
+	con esto podemos acceder a los datos, código y stack de la tarea.
+	
+3)	primer cambio de contexto:
+	En el primer cambio de contexto si queremos tratarlo como un cambio
+	de contexto cualquiera debemos tener un TSS disponible para preservar el estado.
+	Para esto se define la tarea Inicial, que simplemente existe para este propósito.
+	
+	T0 (Inicial) - carga manual -> TI (Idle)
+	
+	tareas suspendidas:
+	En el caso en que todas las tareas hayan finalizado, como es requerido por el scheduler
+	que siempre haya una tarea en ejecución, se define una tarea que no hace
+	nada para ciclar hasta que aparezca otra tarea.
+	
+	
+4)	El scheduler de un SO, se encarga de administrar el tiempo de CPU
+	de cada tarea. La política es la forma en la que decide en que orden
+	ejecutar las tareas, por ejemplo en nuestro caso round-robin ejecuta 
+	las tareas con una distribución uniforme del tiempo.
+	
+5)	Para lograr la ilusión de simultaneidad, se asignan lapsos cortos en los
+	que cada tarea tiene control de la CPU ya que estos lapsos son imperceptibles
+	para un ser humano, aparenta ejecutar varias tareas en simultáneo.
+	
+--FIN CHECKPOINT 1-- 
+
+6)	La tarea inicial es equivalente a 0, esto quiere decir que todos los registros.
+	##Porque no usar la tarea idle?
+	
+7: a)   El método tss_gdt_entry_for_task genera una entrada en la gdt que hace referencia a la tss ingresada como parámetro.
+
+   b)	Se completan con dereferencias a los tss de idle.
+   
+8) -
+
+9) -
+
+10) -
+
+11) -
+
+12) -
+
+13) 	Si no tuviera una pila de nivel 0, la RAI utilizaría una pila de nivel 3,
+	lo cual es una GPF, por otro lado sin SS0 y ESP0 no podría resguardar el SS ESP y EIP de
+	la tarea interrumpida.
+	
+	De esta forma cuando se retorne a la tarea interrumpida, el EIP se cargará en la etiqueta fin
+	hará un popad de los registros generales y con iret restaurará el EIP SS ESP CS y EFLAGS. 
+	
+	sched_task_offset: 	dd 0xFFFFFFFF		;;48 bits en little endian por lo tanto esto queda
+	sched_task_selector:	dw 0xFFFF		;;0xFFFFFFFFFFFF
+
+	global _isr32					;;se exporta
+	_isr32:						;;etiqueta
+		pushad					;;push gpr a ring0
+		call pic_finish1			;;indica que se esta ejecutando la rai
+		call sched_next_task			;;ax <- SSel de next_task
+		str cx					;;cx <- tr
+		cmp ax, cx				;;compara
+		je .fin					;;si next_task = actual_task, si no
+		mov word [sched_task_selector], ax	;;sched_task_selector <- next_task
+		jmp far [sched_task_offset]		;;por ser little endian leo sched_task_selector ⊕ sched_task_offset
+		.fin:					;;etiqueta
+		popad					;;cuando salte a un TSS con su EIP en .fin, restauro los gpr
+		iret					;;cuando salte a un TSS con su EIP en .fin, restauro CS, SS, ESP, EIP, EFLAGS
+
+14)	a) 	Línea comentada.
+
+	b)	El tamaño del dato es de 48 bits.
+		Los valores (?) indican offset y selector de segmento.
+		La dirección de offset se utiliza como una etiqueta para que
+		el selector quede en los 16 bits altos, no influye el valor del offset.
+		
+	c)  	Regresa a la etiqueta 'fin'.
+	
+15)	Hecho, muestra la tarea ejecutándose en este momento, la cola de tareas y sus funciones.
+
+16)	uint16_t sched_next_task(void) {              			//Porque las & curr?
+
+		int8_t i = (last_task + 1) % MAX_TASKS;       		//tomo la siguiente en orden, interpretando las teareas como un buffer circular.
+
+		do {                                           
+			if (sched_tasks[i].alive) {                 	//la siguiente tarea viva
+				current_task = sched_tasks[i].task_id;  //tomo su id
+				last_task = current_task;               //y la anoto como la ultima
+				return sched_tasks[i].selector;         //retorno el selector
+			}
+		i = (i + 1) % MAX_TASKS;                    		//itero
+		} while (i != last_task);                      		//mientras no haya dado la vuelta
+
+
+		if (!sched_tasks[last_task].alive) {          		//si la tarea en la que estaba murió, y no había otra tarea viva
+			// No alive tasks. Jump to idle.
+			current_task = IDLE_TASK_ID;                	//salto a la tarea idle
+			return GDT_IDX_TASK_IDLE << 3;
+		}
+		// Only one task alive for this player.
+
+		kassert(sched_tasks[last_task].alive, "Switching to dead task!");
+		current_task = sched_tasks[last_task].task_id;
+		return sched_tasks[last_task].selector;       		//la ultima tarea que ejecute (no idle) era la unica viva, me mantengo en ella.
+	}
+
+17)	syscall_getid: levanta interrupción 108, y devuelve el contenido del registro eax que contiene el selector de la tarea actual.
+	
+	syscall_print: levanta interrupcion 118, e imprime a pantalla el string pasado, en la posicion (x, y), con el atributo attr.
+	
+	syscall_print_dec: levanta la interrupcion 128, e imprime el numero en representacion decimal, en la posicion (x, y), con el atributo attr.
+	
+	syscall_print_hex: levanta la interrupcion 138, e imprime el numero en representacion hexadecimal, en la posicion (x, y), con el atributo attr.
+	
+18)	LLamamos a la función syscall_print en vez de llamar a print, porque si lo hicieramos, ocurriría una gpf, pues el código de print esta alojado
+	en el mapeo por id dentro del kernel.
+	
+19)	Para elegir la direccion virtual, se toma la base de la tarea, se le suman las tres paginas ya presentes y un offset por el id.
+	La dirección física se la pide a la mmu. Si no se encuentra, se pide una nueva.
+	
+20)	Crea un descriptor en la GDT que apunta la TSS de la tarea.
+	Se desplaza tres a la izquierda para respetar el formato ya que los 3 primeros bits, son flags.
+
+21)	La Tarea A, escribe en memoria compartida una clave, unica para cada id de esta tarea.
+	
+22)	La Tarea B, busca en memoria compartida una clave, igual para todas las instancias de esta tarea.
+
+23)	Si la función terminara, no tendría sentido que "retorne" puesto que nadie la llamó.
+
+
+
+
+
+

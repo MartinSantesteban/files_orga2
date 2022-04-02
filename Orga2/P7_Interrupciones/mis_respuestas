@@ -1,0 +1,106 @@
+INTERRUPCIONES
+
+[REPASO DE LA CLASE]
+
+
+Interrupciones: Permiten que un agente externo o interno solicite interrumpir la ejecucion actual para atender su pedido.
+                La parte solicitante ve al procesador como un recurso al que quiere tenr acceso,
+                
+Nuesto mecanismo define una identidad numerica para cada interrupcion.
+Define una tabla de descriptores,donde para cada indice se decide: 
+                                Donde se ecnuentra la RAI
+                                En que contexto se va a ejecutar (segmento y nivel de privilegio)
+                                De que tipo de interrupcion se trata
+                    
+TIPOS DE INTERRUPCIONES:
+    Excepciones: Son generadas por el procesador cuando se cumpla una condicion (por ejemplo, GP, PF, etc)   <---- las maneja la CPU
+    
+    Interrupciones externas: SOn interrupciones generadas por fuera de la computadora, como por un teclado, reloj, pendirve.    <------- Las maneja el PIC
+    
+    Interrupciones internas: Interrupciones generadas por dentro, cuyo origen se da en una llamada a la instruccion INT por parte de un proceso. <----- Syscalls! interrupciones por software
+    
+IMPLEMENTACION DE MECANISMOS PARA CADA INTERRUPCION
+    Escribimos la rutina de atencion de cada interrupcion/excepcion, usando IRET.
+    Definimos la IDT (Interruption Descriptor Table)
+    Cargamos nuestro descriptor de IDT en IDTR (mismo funcionamiento que la GDT)
+    
+MANEJO DE LA PILA
+    Si llega la interrupcion, antes de ejecutar la RAI se hace lo siguiente:
+        push eflags
+        push cs
+        push eip
+        push error_code ( en algunas excepciones ) <- el programador se encarga de pushearlo y popearlo en la rai.
+        
+        No necesitamos tenerla alineada a 16 bits, va a estar alineada a 32 por lo gneral. (pero no por convencion)
+        
+        Cuando hay cambio de nivel de privilegio, se tienen dos pilas.
+            -> Si el nivel de privilegio de programa es 0, entonces se pushea lo dicho al stack de nivel 0 y se ejecuta la rai (Handlers stack)
+            -> Sino, no se pushea nada al Interrupted Procedures stack, y se pueshea todo + SS al Handlers stack
+            
+IDT = INTERRUPT DESCRIPTOR TABLE    
+    La IDT es muy parecida a la GDT, pero en vez de descriptores de segmento tiene descriptores de compuertas de interrupcion.
+    
+    La IDt contiene descriptores para:
+     -> Compuertas de tarea (Task Gates)              (se ven en la clase de tareas)
+     -> Compuertas de interrupcion (Interrupt gates)  (se ven ahora)
+     -> Compuertas de trampa                          (mencion especial)
+     
+ATRIBUTOS MAS IMPORTANTES DE UNA INTERRUPT GATE:
+    Offset: Va a ser la direccion de memoria donde comienza la RAI
+    Segment Selector: Indica el descriptor de la GDT para el que se va a sacar la direccion base y sumar el offset y sacar la rai.
+    P: Present (si esta en memoria ram o no)
+    DPL: Descriptor Priviledge Level
+    Bits 8 a 12: Type Field de todos los descirpotres, para la Interrupt Gate es D 1 1 0, donde D indica si es de 16 bits o 32. <- en el taller usamos solo 1 1 1 0
+    
+CONTROLADOR DE INTERRUPCIONES
+    Las interrupciones externas son administradas por un controlador de interrupciones (PIC)
+    Las interrupciones se mapean a cada entrada del PIC (por ejemplo, el reloj esta mapeada a la interrupcion 32 y el teclado a 33)
+    pic_finish1 = Notificar al PIC que terminamos de atender una interrupcion.
+    
+SYS CALLS
+    Una sys call es una forma que tiene el SO de exponer su funcionalidad a las aplicaciones de epacio de usuario.
+    Pueden tener que ver con el manejo de procesos, sistemas de archivo, dispositivos I/O
+    Vamos a implementar una sys call con una rutina de interrupcion.
+    
+PARA ACTIVAR INTERRUPCIONES
+    -> Definir una IDT con todos los descriptores asociados para excepciones, interrupciones externas y sys calls
+    -> Escribir las rutinas de atencion de interrupciones
+    -> Cargas IDTR y habilitar interrupciones
+    
+    
+CHECKPOINTS
+
+1 / 2 / 3)
+   Hay que completar el macro, ya que sirve como reemplazo sintactico para crear interrupt gates. El offset se asigna como &_isr ## numero, donde numero es el parametro. Osea, en la se define la     compuerta que apunta a la posicion de memoria de la rutina. Ademas se completan los descriptor_Atributes que dicen que es un descripot de interrupcion. Se cambia el DPL a 0 y 
+   el bit D a 1, para denotar que es una interrupcion con codigo de 32 bits.
+   Notar que segsel indica el segmento de la gdt de codigo lvl 0, debido a que la rai es de codigo lvl 0.
+   En el otro macro IDT_ENTRY3, se trata de una de dpl 3. (ese es todo el cambio)
+   
+CHECKPOINT 2
+
+4)
+    IDT_ENTRY3(88); //ahora se definieron gates de nivel de usario, que apuntan a un segmento de codigo de nivel 0, con indices 88 y 98 en la gdt.
+    IDT_ENTRY3(89);
+    
+    Estas son syscalls de nivel de usuario definidas.
+
+5) 
+; inicializar IDT
+    ; Cargar IDT
+    call idt_init    //sin este call, la idt sigue existiendo, pero no tiene ninguna interrupt gate. Esta funcion inicializa a las primeras 20 excepciones + 2 syscalls 88 y 98.
+    lidt [IDT_DESC]
+    xchg bx,bx
+    
+CHECKPOINT 2
+
+6) Pushad pushea todos los registros, popad los popea. Pushad se hace al principio de la rutina y popad se ejecuta como ultima instruccion.
+   Se usa iret en vez de ret porque iret ademas popea toda la informacion que dejamos en el stack al saltar a la rutina.
+   
+   
+Comentario:
+
+Yo pido int 88 en kernel.asm -> se pide acceso a idt[88] -> va a la gdt y con el oofset del codigo de la interrupt gate va a la rai que defini en isr.c . 
+
+
+    
+    
